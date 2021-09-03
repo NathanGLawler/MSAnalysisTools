@@ -1,0 +1,85 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+pathToData <- file.path(Sys.getenv()['DATASETS'], "covid19")
+```
+
+```{r load annotations bioGUNE, echo=FALSE, warning=FALSE, include=FALSE}
+get_annotations_biogune <- function() {
+  pathToData <- file.path(Sys.getenv()['DATASETS'], "covid19")
+  load(file.path(pathToData,"bioGune","DataElements", 'covid19_bioGune_PLA_ANN.daE'))
+  annBioGune = covid19_bioGune_PLA_ANN@obsDescr[[1]]
+  return(annBioGune)
+}
+```
+
+```{r load MRMS data and sort for processing}
+
+MRMS <- read.table(file.path(pathToData, "bioGune", "rawData", 'Biogune_COVID_MRMS - POS.csv'),
+                  sep = ",", 
+                  header = FALSE,
+                  check.names = FALSE)
+
+#set dummy dataframe for dumping measures
+# v <- data.frame(x1 = numeric(),          # Specify empty vectors in data.frame
+#                      x2 = numeric(),
+#                      x3 = numeric(),
+#                      stringsAsFactors = FALSE)
+
+```
+
+
+```{r Break up data to create a datasheet and an annotations sheet}
+v <- data.frame(t(MRMS[1:4,]))
+v <- v[-c(1:2),]
+v$Idx <- (1:nrow(v)) 
+v <- v %>% relocate(Idx, .before = everything())
+colnames(v) <- c("Idx", "BucketLabel", "m/z", "Name", "Formula") 
+
+#Remove rows from data set and set new headers
+ds <- MRMS[5:nrow(MRMS),]
+
+prefix <- "M"
+suffix <- seq(ds[,3:ncol(ds)])
+my.names <- paste(prefix, suffix, sep = "")
+
+colnames(ds) <- c("Filename","SampleType", my.names)
+
+ds$Idx <- 1:nrow(ds)
+ds <- ds %>% relocate(Idx, .before = everything())
+
+#Insert QC column using logical
+
+ds$QC <- ifelse(ds$SampleType == "PQC", 1,0)
+ds <- ds %>% relocate(QC, .after = SampleType)
+
+# Insert SampleID
+
+ds$SampleID <- sapply(strsplit(as.character(ds$Filename),"_"),"[",8)
+ds <- ds %>% relocate(SampleID, .after = SampleType)
+
+```
+
+```{r}
+ann <- get_annotations_biogune()
+
+# ds <- ds[which(ds$SampleID %in% ann$sampleID),]
+ann2<- ann[match(ds$SampleID, ann$sampleID),]
+
+ds$class <- ann2$group
+ds <- ds %>% relocate(class, .after = QC)
+ds$class[is.na(ds$class)] <-  NaN
+
+ds$class <- ifelse(ds$class == "NaN", paste0(ds$SampleType), paste0(ds$class))
+# ds$class <- ann2$group[match(ds$SampleID,ann2$sampleID),]
+
+
+```
+
