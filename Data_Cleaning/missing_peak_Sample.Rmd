@@ -1,0 +1,139 @@
+---
+title: "MissingPeaks"
+author: "N.G.L"
+date: "02/09/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(reshape)
+library(plotly)
+
+setwd('/Users/nathanlawler/OneDrive - Murdoch University/Matlab/Data/Murdoch_University/MRMS/Biogune/DataCleaning/')
+
+read_excel_allsheets <- function(MRMS_POS_BIOGUNE.xlsx, tibble = TRUE) {
+    # I prefer straight data.frames
+    # but if you like tidyverse tibbles (the default with read_excel)
+    # then just pass tibble = TRUE
+    sheets <- readxl::excel_sheets('MRMS_POS_BIOGUNE.xlsx')
+    x <- lapply(sheets, function(X) readxl::read_excel('MRMS_POS_BIOGUNE.xlsx', sheet = X))
+    if(!tibble) x <- lapply(x, as.data.frame)
+    names(x) <- sheets
+    x
+}
+
+mysheets <- read_excel_allsheets("MRMS_POS_BIOGUNE.xlsx")
+
+```
+
+```{r configuration file}
+C.MissingSample = 1
+C.MissingPeak = 1
+
+C.val = 40 
+C.PercSample = 50
+C.PerPeak = 20
+
+```
+
+```{r}
+Data <- mysheets[[1]]
+Meta <- Data %>% select(-starts_with("M"))
+Peak <- mysheets[[2]]
+```
+
+
+```{r Calculate missing values per sample}
+X <- Data %>% select(starts_with("M"))
+X[X==0] <- NaN
+
+c <- length(X)
+
+sample_nan <- apply(X,1, function(y){
+  100*(sum(is.na(as.numeric(y))/c))
+})
+
+sample_nan <- (data_frame(sample_nan))
+sample_nan$index <- 1:nrow(sample_nan)
+
+p1 <- ggplot(sample_nan, aes(x = index,y = sample_nan))+
+  geom_segment(aes(x=index, xend=index, y=0, yend = sample_nan),color = "blue")+
+  geom_point(color = "blue",size = 3, shape = 1)+
+  xlab("Peak Index")+
+  ylab('% missing values')+
+  ggtitle('Percent of missing values per SAMPLE')+
+  theme_light()
+  
+  ggplotly(p1)
+  
+Meta$PercMissSample <- sample_nan$sample_nan
+
+```
+
+
+```{r Clean by missing data in samples}
+
+if (C.MissingSample ==1){
+val <- C.PercSample
+cut <- Meta$PercMissSample > val
+cat(crayon::red('The number of samples with more than', val,"% missing values =",sum(cut==TRUE)))
+Data <- Data[!cut,]
+# Meta <- Meta[!cut,]
+}
+
+```
+
+```{r Calculate % missing data points in each peak}
+QC <- as.logical(Meta$QC)
+Meta2 <- Meta[!QC,]
+
+X1 <- X[!QC,]
+X2 <- X[QC,]
+
+r <- nrow(X1)
+
+peakNan <- apply(X1,2, function(z){
+  100*(sum(is.na(as.numeric(z))/c))
+})
+
+peakNan <- (data_frame(peakNan))
+peakNan$index <- 1:nrow(peakNan)
+
+p2 <- ggplot(peakNan, aes(x = index,y = peakNan))+
+  geom_segment(aes(x=index, xend=index, y=0, yend = peakNan),color = "blue")+
+  geom_point(color = "blue",size = 3, shape = 1)+
+  xlab("Peak Index")+
+  ylab('% missing values')+
+  ggtitle('Percent of missing values per PEAK')+
+  theme_light()
+  
+  ggplotly(p2)
+  
+Peak$PercMissingPeak <- peakNan$peakNan
+
+```
+
+```{r Clean per missing Peak}
+if (C.MissingPeak ==1){
+val <- C.PerPeak
+cut <- Peak$PercMissingPeak > val
+cat(crayon::red('The number of peaks with more than', val,"% missing values =",sum(cut==TRUE)))
+
+cutlist <- which(cut, arr.ind = TRUE, useNames = TRUE)
+Peak$Missingflag <- cut
+
+###Add in data frame of removed peaks
+
+Removed <- Peak[cutlist,]
+Peak <- Peak[-cutlist,]
+Data <- Data %>% select(-names(cutlist))
+
+}
+```
+
