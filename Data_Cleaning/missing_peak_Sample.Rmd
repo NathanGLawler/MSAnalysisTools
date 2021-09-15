@@ -14,21 +14,37 @@ library(readxl)
 library(tidyverse)
 library(reshape)
 library(plotly)
+```
 
-setwd('/Users/nathanlawler/OneDrive - Murdoch University/Matlab/Data/Murdoch_University/MRMS/Biogune/DataCleaning/')
+```{r}
+projectTitle <- "timsTOF_POS_Missing"
 
-read_excel_allsheets <- function(MRMS_POS_BIOGUNE.xlsx, tibble = TRUE) {
+filename <- "timsTOF_POS_Missing.xlsx"
+```
+
+
+```{r}
+
+# setwd('/Users/nathanlawler/OneDrive - Murdoch University/Matlab/Data/Murdoch_University/MRMS/Biogune/DataCleaning/')
+
+
+# dlg_message("Please select your project folder", type = 'ok'); project_dir <- rstudioapi::selectDirectory() # save project directory root location
+# setwd(project_dir)
+
+dlg_message("Please select your metaboscape workbook"); file <- file.choose()
+
+read_excel_allsheets <- function(file, tibble = TRUE) {
     # I prefer straight data.frames
     # but if you like tidyverse tibbles (the default with read_excel)
     # then just pass tibble = TRUE
-    sheets <- readxl::excel_sheets('MRMS_POS_BIOGUNE.xlsx')
-    x <- lapply(sheets, function(X) readxl::read_excel('MRMS_POS_BIOGUNE.xlsx', sheet = X))
+    sheets <- readxl::excel_sheets(file)
+    x <- lapply(sheets, function(X) readxl::read_excel(file, sheet = X))
     if(!tibble) x <- lapply(x, as.data.frame)
     names(x) <- sheets
     x
 }
 
-mysheets <- read_excel_allsheets("MRMS_POS_BIOGUNE.xlsx")
+mysheets <- read_excel_allsheets(file)
 
 ```
 
@@ -36,8 +52,8 @@ mysheets <- read_excel_allsheets("MRMS_POS_BIOGUNE.xlsx")
 C.MissingSample = 1
 C.MissingPeak = 1
 
-C.val = 40 
-C.PercSample = 50
+C.val = 30
+C.PercSample = 20
 C.PerPeak = 20
 
 ```
@@ -99,7 +115,7 @@ X2 <- X[QC,]
 r <- nrow(X1)
 
 peakNan <- apply(X1,2, function(z){
-  100*(sum(is.na(as.numeric(z))/c))
+  100*(sum(is.na(as.numeric(z))/r))
 })
 
 peakNan <- (data_frame(peakNan))
@@ -129,11 +145,31 @@ cutlist <- which(cut, arr.ind = TRUE, useNames = TRUE)
 Peak$Missingflag <- cut
 
 ###Add in data frame of removed peaks
+if(cutlist > 0) {
+  Removed <- Peak[cutlist,]
+  Peak <- Peak[-cutlist,]
+  Data <- Data %>% select(-names(cutlist))
+}
 
-Removed <- Peak[cutlist,]
-Peak <- Peak[-cutlist,]
-Data <- Data %>% select(-names(cutlist))
+else {
+  Data <- Data
+  Peak <- Peak
+}
 
 }
+```
+
+```{r}
+dlg_message("Please select your project folder to save workbook", type = 'ok'); project_dir <- rstudioapi::selectDirectory() # save project directory root location
+setwd(project_dir)
+
+wb <- createWorkbook(projectTitle)
+addWorksheet(wb, "Data")
+addWorksheet(wb, "Peak")
+
+writeData(wb, "Data", Data, colNames = TRUE)
+writeData(wb, "Peak", Peak, colNames = TRUE)
+
+saveWorkbook(wb, file = filename , overwrite = TRUE)
 ```
 
