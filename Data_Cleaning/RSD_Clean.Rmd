@@ -1,0 +1,144 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(reshape)
+library(plotly)
+```
+
+```{r}
+projectTitle <- "timsTOF_RSDClean"
+
+filename <- "timsTOF_POS_RSDClean.xlsx"
+```
+
+```{r read in Data File}
+
+file <- file.choose()
+
+read_excel_allsheets <- function(file, tibble = TRUE) {
+    # I prefer straight data.frames
+    # but if you like tidyverse tibbles (the default with read_excel)
+    # then just pass tibble = TRUE
+    sheets <- readxl::excel_sheets(file)
+    x <- lapply(sheets, function(X) readxl::read_excel(file, sheet = X))
+      if(!tibble) x <- lapply(x, tibble_row())
+    names(x) <- sheets
+    x
+}
+
+mysheets <- read_excel_allsheets(file)
+
+```
+
+```{r configuration file}
+C.MissingSample = 1
+C.MissingPeak = 1
+C.val = 30
+C.PercSample = 20
+C.PerPeak = 20
+
+C.QCClean = 1
+C.SNRClean = 1
+
+C.QCType = 'np' #or 'np'
+C.QCval = 20
+
+```
+
+```{r}
+Data <- mysheets[["Data"]]
+Meta <- Data %>% select(-starts_with("M"))
+Peak <- mysheets[["Peak"]]
+```
+
+```{r}
+X <- Data %>% select(starts_with("M"))
+X[X==0] <- NaN
+
+# QC <-Meta$QC ==1
+QC <- Meta$SampleType == "LTR" 
+
+X1qc <- as.matrix(X[QC,])
+X1sample <- as.matrix(X[!QC,])
+
+if (C.QCType == 'p'){
+RSDqc <- apply(X1qc, 2, function(r){
+  qcSD <- sd(as.numeric(r),na.rm = TRUE)
+  qcMean <- mean(as.numeric(r), na.rm = TRUE)
+  rsdLoop <- (qcSD*100)/qcMean
+})
+  Peak$RSD <- RSDqc 
+
+} else if (C.QCType == "np"){
+
+  MPAqc <- apply(X1qc, 2, function(m){
+  MPAqc <- median(as.numeric(m), na.rm = TRUE)
+  RSD <- 100*mad(as.numeric(m), constant = 1.4826, na.rm = TRUE)/MPAqc
+})
+  Peak$MADrsd <- MPAqc
+}
+
+# Peak$RSD <- RSDqc 
+# Peak$MADrsd <- MPAqc
+
+```
+
+```{r}
+if (C.QCClean == 1){
+  if (C.QCType == "p"){
+  val <- C.QCval
+  cut <- Peak$RSD > val
+  cat(crayon::red('The number of samples with more than', val,"% RSD =",sum(cut==TRUE, na.rm = TRUE)))
+  fi <- which(Peak$RSD < val)
+} else{ 
+    val <- C.QCval
+    cut <- Peak$MADrsd > val
+    cat(crayon::red('The number of samples with more than', val,"% madRSD =",sum(cut==TRUE, na.rm = TRUE)))
+    fi <- which(Peak$MADrsd < val)
+    }
+}
+```
+
+
+
+
+```{r}
+
+# fi <- which(Peak$MADrsd < val)
+
+Metabolite_List <- Peak$Label[fi]
+
+DataClean <- Data %>% select(all_of(Metabolite_List))
+
+DataClean <- cbind(Meta, DataClean)
+
+PeakClean <- Peak[fi,]
+
+```
+
+```{r}
+dlg_message("Please select your project folder to save workbook", type = 'ok'); project_dir <- rstudioapi::selectDirectory() 
+# save project directory root location
+setwd(project_dir)
+
+wb <- createWorkbook(projectTitle)
+addWorksheet(wb, "DataClean")
+addWorksheet(wb, "PeakClean")
+
+writeData(wb, "DataClean", DataClean, colNames = TRUE)
+writeData(wb, "PeakClean", Peak, colNames = TRUE)
+
+saveWorkbook(wb, file = filename , overwrite = TRUE)
+
+cat(crayon::blue('DONE! Files saved as work sheets - DataClean & PeakClean'))
+
+```
+
