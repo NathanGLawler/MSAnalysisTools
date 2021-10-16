@@ -4,11 +4,60 @@ output: html_notebook
 ---
 ```{r}
 library(tidyverse)
+library(openxlsx)
+library(svDialogs)
 ```
 
+```{r}
+projectTitle <- "pathwest_TIMS_POS"
+
+filename <-""
+```
+
+read annotations config file
+```{r}
+pathwest <- 1
+biogune <- 0
+cambridge <- 0
+harvard <- 0
+```
 
 ```{r}
-pathToData <- file.path(Sys.getenv()['DATASETS'], "covid19")
+dlg_message("Please select your project folder", type = 'ok'); project_dir <- rstudioapi::selectDirectory() # save project directory root location
+setwd(project_dir)
+```
+
+```{r warning=TRUE, error=TRUE}
+dlg_message("Read in data - Select the CSV file now"); mscapeData <- read.table(file = file.choose(), 
+                                                                                sep = ",",
+                                                                                header = FALSE,
+                                                                                check.names = FALSE)
+```
+
+```{r load annotations pathwest, echo=FALSE, warning=FALSE, include=FALSE}
+get_annotations_wa <- function() {
+  pathToData <- file.path(Sys.getenv()['DATASETS'], "covid19")
+  load(file.path(pathToData, "pathwest", "dataElements", "covid19_pathwest_ANN.daE"))
+  annPath = annotations@obsDescr[[1]]
+  annPath = annPath[,c(1,4,12)]
+  colnames(annPath) = c("sampleID", "class", "tpoint")
+  
+  load(file.path(pathToData, "pathwestFollowUp", "dataElements","covid19_pathwestFU_ANN_recovery.daE"))
+  annPathFU = annotations@obsDescr[[1]]
+  annPathFU = annPathFU[,c(1,2,14)]
+  colnames(annPathFU) = c("sampleID", "class","tpoint")
+  annPathFU$class = "rec"
+  annPathFU$tpoint = "rec"
+  load(file.path(pathToData, "healthyBank", "DataElements","covid19_HTYBK_PLA_ANN_recovery.daE"))
+  annPathHB = annotations@obsDescr[[1]]
+  annPathHB = annPathHB[,1:3]
+  colnames(annPathHB) = c("sampleID", "class","tpoint")
+  annPathHB$class = "hty"
+  annPathHB$tpoint = "hty"
+  annWA = rbind(annPath,annPathFU,annPathHB)
+  annWA$sampleID[annWA$sampleID == "COV0120"] <- "COV01200"
+  return(annWA)
+}
 ```
 
 ```{r load annotations bioGUNE, echo=FALSE, warning=FALSE, include=FALSE}
@@ -20,31 +69,16 @@ get_annotations_biogune <- function() {
 }
 ```
 
-```{r load MRMS data and sort for processing}
-
-MRMS <- read.table(file.path(pathToData, "bioGune", "rawData", 'Biogune_COVID_MRMS - POS.csv'),
-                  sep = ",", 
-                  header = FALSE,
-                  check.names = FALSE)
-
-#set dummy dataframe for dumping measures
-# v <- data.frame(x1 = numeric(),          # Specify empty vectors in data.frame
-#                      x2 = numeric(),
-#                      x3 = numeric(),
-#                      stringsAsFactors = FALSE)
-
-```
-
 
 ```{r Break up data to create a datasheet and an annotations sheet}
-v <- data.frame(t(MRMS[1:4,]))
+v <- data.frame(t(mscapeData[1:4,]))
 v <- v[-c(1:2),]
 v$Idx <- (1:nrow(v)) 
 v <- v %>% relocate(Idx, .before = everything())
 colnames(v) <- c("Idx", "BucketLabel", "m/z", "Name", "Formula") 
 
 #Remove rows from data set and set new headers
-ds <- MRMS[5:nrow(MRMS),]
+ds <- mscapeData[5:nrow(mscapeData),]
 
 prefix <- "M"
 suffix <- seq(ds[,3:ncol(ds)])
@@ -65,15 +99,36 @@ ds <- ds %>% relocate(QC, .after = SampleType)
 ds$SampleID <- sapply(strsplit(as.character(ds$Filename),"_"),"[",8)
 ds <- ds %>% relocate(SampleID, .after = SampleType)
 
+
+#Insert label names in Peak dataframe
+v$label <- t(my.names)
+
 ```
 
 ```{r}
-ann <- get_annotations_biogune()
+
+if(pathwest == 1){
+  ann <- get_annotations_wa()
+}
+
+if(cambridge == 1){
+  ann <- get_annotations_biogune()  
+}  
+
+if(cambridge == 1){
+  ann <- get_annotations_cambridge()
+}
 
 # ds <- ds[which(ds$SampleID %in% ann$sampleID),]
+
+
+```
+
+```{r}
+
 ann2<- ann[match(ds$SampleID, ann$sampleID),]
 
-ds$class <- ann2$group
+ds$class <- ann2$class
 ds <- ds %>% relocate(class, .after = QC)
 ds$class[is.na(ds$class)] <-  NaN
 
@@ -81,5 +136,16 @@ ds$class <- ifelse(ds$class == "NaN", paste0(ds$SampleType), paste0(ds$class))
 # ds$class <- ann2$group[match(ds$SampleID,ann2$sampleID),]
 
 
+```
+
+```{r}
+wb <- createWorkbook(projectTitle)
+addWorksheet(wb, "Data")
+addWorksheet(wb, "Peak")
+
+writeData(wb, "Data", ds, colNames = TRUE)
+writeData(wb, "Peak", v, colNames = TRUE)
+
+saveWorkbook(wb, file = filename, overwrite = TRUE)
 ```
 
