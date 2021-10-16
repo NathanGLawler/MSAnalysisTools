@@ -2,22 +2,22 @@
 title: "R Notebook"
 output: html_notebook
 ---
-```{r}
+```{r warning=FALSE}
 library(tidyverse)
 library(openxlsx)
 library(svDialogs)
 ```
 
 ```{r}
-projectTitle <- "pathwest_TIMS_POS"
+projectTitle <- "Biogune_MRMS_neg"
 
-filename <-""
+filename <-"Biogune_MRMS_neg.xlsx"
 ```
 
 read annotations config file
 ```{r}
-pathwest <- 1
-biogune <- 0
+pathwest <- 0
+biogune <- 1
 cambridge <- 0
 harvard <- 0
 ```
@@ -72,7 +72,7 @@ get_annotations_biogune <- function() {
 
 ```{r Break up data to create a datasheet and an annotations sheet}
 v <- data.frame(t(mscapeData[1:4,]))
-v <- v[-c(1:2),]
+v <- v[-c(1:4),]
 v$Idx <- (1:nrow(v)) 
 v <- v %>% relocate(Idx, .before = everything())
 colnames(v) <- c("Idx", "BucketLabel", "m/z", "Name", "Formula") 
@@ -101,7 +101,7 @@ ds <- ds %>% relocate(SampleID, .after = SampleType)
 
 
 #Insert label names in Peak dataframe
-v$label <- t(my.names)
+v$label <- (my.names)
 
 ```
 
@@ -111,7 +111,7 @@ if(pathwest == 1){
   ann <- get_annotations_wa()
 }
 
-if(cambridge == 1){
+if(biogune == 1){
   ann <- get_annotations_biogune()  
 }  
 

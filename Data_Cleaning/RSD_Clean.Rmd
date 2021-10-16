@@ -110,9 +110,6 @@ if (C.QCClean == 1){
 }
 ```
 
-
-
-
 ```{r}
 
 # fi <- which(Peak$MADrsd < val)
@@ -127,7 +124,7 @@ PeakClean <- Peak[fi,]
 
 ```
 
-```{r}
+```{r warning=FALSE}
 dlg_message("Please select your project folder to save workbook", type = 'ok'); project_dir <- rstudioapi::selectDirectory() 
 # save project directory root location
 setwd(project_dir)
