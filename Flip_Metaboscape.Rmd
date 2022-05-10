@@ -1,12 +1,29 @@
 ---
-title: "R Notebook"
+title: "R Notebook - Flipping MetaboScape outputs to 'tidy format'"
+author: "Nathan Lawler"
 output: html_notebook
+  github_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+always_allow_html: true
 ---
-```{r warning=FALSE}
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE)
+```
+
+> The following notebook will be used to transform the output from MetaboScape into a usable dataframe (i.e. annotation and data matrix)
+
+```{r}
 library(tidyverse)
 library(openxlsx)
 library(svDialogs)
 ```
+
+
 
 ```{r}
 projectTitle <- "Biogune_MRMS_neg"
@@ -15,6 +32,7 @@ filename <-"Biogune_MRMS_neg.xlsx"
 ```
 
 read annotations config file
+
 ```{r}
 pathwest <- 0
 biogune <- 1
@@ -68,7 +86,6 @@ get_annotations_biogune <- function() {
   return(annBioGune)
 }
 ```
-
 
 ```{r Break up data to create a datasheet and an annotations sheet}
 v <- data.frame(t(mscapeData[1:4,]))
@@ -148,4 +165,3 @@ writeData(wb, "Peak", v, colNames = TRUE)
 
 saveWorkbook(wb, file = filename, overwrite = TRUE)
 ```
-
