@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 library(readxl)
 library(tidyverse)
 library(reshape)
@@ -17,44 +17,38 @@ library(plotly)
 ```
 
 ```{r}
-projectTitle <- "timsTOF_POS_Missing"
+projectTitle <- "AddTitleHere.xlsx"
 
-filename <- "timsTOF_POS_Missing.xlsx"
+dlg_message("Please select your metaboscape workbook"); pathToData <- file.choose()
+
 ```
 
 
 ```{r}
 
-# setwd('/Users/nathanlawler/OneDrive - Murdoch University/Matlab/Data/Murdoch_University/MRMS/Biogune/DataCleaning/')
-
-
-# dlg_message("Please select your project folder", type = 'ok'); project_dir <- rstudioapi::selectDirectory() # save project directory root location
-# setwd(project_dir)
-
-dlg_message("Please select your metaboscape workbook"); file <- file.choose()
-
-read_excel_allsheets <- function(file, tibble = TRUE) {
+read_excel_allsheets <- function(pathToData, tibble = TRUE) {
     # I prefer straight data.frames
     # but if you like tidyverse tibbles (the default with read_excel)
     # then just pass tibble = TRUE
-    sheets <- readxl::excel_sheets(file)
-    x <- lapply(sheets, function(X) readxl::read_excel(file, sheet = X))
+    sheets <- readxl::excel_sheets(pathToData)
+    x <- lapply(sheets, function(X) readxl::read_excel(pathToData, sheet = X))
     if(!tibble) x <- lapply(x, as.data.frame)
     names(x) <- sheets
     x
 }
 
-mysheets <- read_excel_allsheets(file)
+mysheets <- read_excel_allsheets(pathToData)
 
 ```
 
+#User input required for classifying missing values per peak and per sample
 ```{r configuration file}
 C.MissingSample = 1
 C.MissingPeak = 1
 
 C.val = 30
-C.PercSample = 20
-C.PerPeak = 20
+C.PercSample = 30
+C.PerPeak = 30
 
 ```
 
@@ -81,6 +75,8 @@ sample_nan$index <- 1:nrow(sample_nan)
 p1 <- ggplot(sample_nan, aes(x = index,y = sample_nan))+
   geom_segment(aes(x=index, xend=index, y=0, yend = sample_nan),color = "blue")+
   geom_point(color = "blue",size = 3, shape = 1)+
+  geom_hline(yintercept = as.numeric(C.val), linetype = "dashed", color = "red")+
+  ylim(0,100)+
   xlab("Peak Index")+
   ylab('% missing values')+
   ggtitle('Percent of missing values per SAMPLE')+
@@ -124,6 +120,9 @@ peakNan$index <- 1:nrow(peakNan)
 p2 <- ggplot(peakNan, aes(x = index,y = peakNan))+
   geom_segment(aes(x=index, xend=index, y=0, yend = peakNan),color = "blue")+
   geom_point(color = "blue",size = 3, shape = 1)+
+  geom_hline(yintercept = as.numeric(C.PerPeak),
+             linetype = "dashed", color = "red")+
+  ylim(0,100)+
   xlab("Peak Index")+
   ylab('% missing values')+
   ggtitle('Percent of missing values per PEAK')+
@@ -160,16 +159,16 @@ else {
 ```
 
 ```{r}
-dlg_message("Please select your project folder to save workbook", type = 'ok'); project_dir <- rstudioapi::selectDirectory() # save project directory root location
-setwd(project_dir)
+wb <- loadWorkbook(pathToData)
 
-wb <- createWorkbook(projectTitle)
-addWorksheet(wb, "Data")
-addWorksheet(wb, "Peak")
+addWorksheet(wb, "DataClean")
+addWorksheet(wb, "PeakClean")
 
-writeData(wb, "Data", Data, colNames = TRUE)
-writeData(wb, "Peak", Peak, colNames = TRUE)
+writeData(wb, "DataClean", Data, colNames = TRUE)
+writeData(wb, "PeakClean", Peak, colNames = TRUE)
 
-saveWorkbook(wb, file = filename , overwrite = TRUE)
+saveWorkbook(wb, file = pathToData, overwrite = TRUE)
+
+cat(crayon::blue('DONE! Files saved as work sheets - DataClean & PeakClean'))
 ```
 

@@ -16,50 +16,44 @@ library(plotly)
 ```
 User to define options
 ```{r}
-projectTitle <- "timsTOF_RSDClean"
+projectTitle <- "AddTitleHere.xlsx"
 
-filename <- "timsTOF_POS_RSDClean.xlsx"
+dlg_message("Please select your metaboscape workbook"); pathToData <- file.choose()
 ```
 
 ```{r read in Data File}
 
-file <- file.choose()
-
-read_excel_allsheets <- function(file, tibble = TRUE) {
+read_excel_allsheets <- function(pathToData, tibble = TRUE) {
     # I prefer straight data.frames
     # but if you like tidyverse tibbles (the default with read_excel)
     # then just pass tibble = TRUE
-    sheets <- readxl::excel_sheets(file)
-    x <- lapply(sheets, function(X) readxl::read_excel(file, sheet = X))
+    sheets <- readxl::excel_sheets(pathToData)
+    x <- lapply(sheets, function(X) readxl::read_excel(pathToData, sheet = X))
       if(!tibble) x <- lapply(x, tibble_row())
     names(x) <- sheets
     x
 }
 
-mysheets <- read_excel_allsheets(file)
+mysheets <- read_excel_allsheets(pathToData)
 
 ```
 
 USER to set parameters here
 ```{r configuration file}
-C.MissingSample = 1
-C.MissingPeak = 1
-C.val = 30
-C.PercSample = 20
-C.PerPeak = 20
-
 C.QCClean = 1
 C.SNRClean = 1
 
-C.QCType = 'np' #or 'np'
-C.QCval = 20
+C.QCType = 'np' #or 'p'
+C.QCval = 30
+
+sampleClean <- "PQC" #LTR
 
 ```
 
 ```{r}
-Data <- mysheets[["Data"]]
+Data <- mysheets[["DataClean"]]
 Meta <- Data %>% select(-starts_with("M"))
-Peak <- mysheets[["Peak"]]
+Peak <- mysheets[["PeakClean"]]
 ```
 
 ```{r}
@@ -67,7 +61,7 @@ X <- Data %>% select(starts_with("M"))
 X[X==0] <- NaN
 
 # QC <-Meta$QC ==1
-QC <- Meta$SampleType == "LTR" 
+QC <- Meta$SampleType == sampleClean 
 
 X1qc <- as.matrix(X[QC,])
 X1sample <- as.matrix(X[!QC,])
@@ -111,34 +105,28 @@ if (C.QCClean == 1){
 ```
 
 ```{r}
+Metabolite_List <- as.list(Peak %>% filter(MADrsd < val) %>% select(label))
 
-# fi <- which(Peak$MADrsd < val)
+DataClean <- Data %>% select(any_of(Metabolite_List[[1]]))
 
-Metabolite_List <- Peak$Label[fi]
-
-DataClean <- Data %>% select(all_of(Metabolite_List))
+PeakClean <- Peak %>% filter(label %in% Metabolite_List[[1]])
 
 DataClean <- cbind(Meta, DataClean)
-
-PeakClean <- Peak[fi,]
 
 ```
 
 ```{r warning=FALSE}
-dlg_message("Please select your project folder to save workbook", type = 'ok'); project_dir <- rstudioapi::selectDirectory() 
-# save project directory root location
-setwd(project_dir)
+wb <- loadWorkbook(pathToData)
 
-wb <- createWorkbook(projectTitle)
-addWorksheet(wb, "DataClean")
-addWorksheet(wb, "PeakClean")
+addWorksheet(wb, "DataCleaned")
+addWorksheet(wb, "PeakCleaned")
 
-writeData(wb, "DataClean", DataClean, colNames = TRUE)
-writeData(wb, "PeakClean", Peak, colNames = TRUE)
+writeData(wb, "DataCleaned", DataClean, colNames = TRUE)
+writeData(wb, "PeakCleaned", PeakClean, colNames = TRUE)
 
-saveWorkbook(wb, file = filename , overwrite = TRUE)
+saveWorkbook(wb, file = pathToData, overwrite = TRUE)
 
-cat(crayon::blue('DONE! Files saved as work sheets - DataClean & PeakClean'))
+cat(crayon::blue('DONE! Files saved as work sheets - DataCleaned & PeakCleaned'))
 
 ```
 

@@ -1,0 +1,215 @@
+---
+title: "LTR Control Check"
+output:
+    html_document:
+    code_folding: "hide"
+---
+
+#Library Installation
+```{r}
+#Install non-standard required packages
+# devtools::install_github("jwist/fusion")
+# install.packages("tidyverse")
+# install.packages("gridExtra")
+# install.packages("cowplot")
+# devtools::install_github("tkimhofer/metabom8")
+```
+
+#Load Libraries
+```{r, message=FALSE}
+#Load required libraries
+library(fusion)
+library(tidyverse)
+library(reshape2)
+library(dplyr)
+library(readxl) 
+library(gridExtra)
+library(metabom8)
+```
+
+#Load Config Files
+```{r}
+#Read config file
+metConfig <- readxl::read_excel("./config/configFile.xlsx", sheet="metabolites")
+fileConfig <- readxl::read_excel("./config/configFile.xlsx", sheet="dataFiles")
+
+#Extract list of targeted metabolites to be included (incl. Internal Standards)
+metISTDList <- metConfig %>% dplyr::filter(toInclude==TRUE)
+metISTDList <- dplyr::select(metISTDList, 1)
+
+#Extract list of targeted metabolites to be reviewed (excl. Internal Standards)
+metList <- metConfig %>% dplyr::filter(toReview==TRUE)
+metList <- dplyr::select(metList, 1)
+
+#Extract list of data files to review
+fileList <- fileConfig %>% dplyr::filter(toReview==TRUE)
+fileList <- dplyr::select(fileList, 1)
+```
+
+#Load All Data Elements
+```{r}
+ltrQuant <- NULL
+# ltrArea <- NULL
+sampleCohort <- NULL
+
+# dataDir <- "./data/"
+# dataFiles <- list.files(path=dataDir, full.names=FALSE)
+
+for(i in 1:nrow(fileList)){
+# for(fileName in dataFiles){
+  #Load data element file
+  load(fileList$fileName[i])
+  # load(paste(dataDir, fileName, sep=""))
+
+  #Extract all LTR data from project daE file
+  sampleType <- fusion::getData(daAA, type = c("ltr"), replicates = "all")
+
+  #LTR data file name & cohort
+  sampleID <- sampleType@obsDescr[[1]]$AnalysisName
+ 
+  # cohort <- sapply(strsplit(fileName, split="_"), getElement, 2)
+  cohort <- sapply(strsplit(fileList$fileName[i], split="_"), getElement, 2)
+  sc <- data.frame(sampleID, cohort)
+
+  #LTR Quantity
+  quant <- dplyr::as_tibble(sampleType@.Data) %>% as.data.frame()
+  colnames(quant) <- unname(sapply(colnames(quant), function(x) gsub(" [IS]", "", x, 
+                                                                     fixed = TRUE)))
+  quant[quant == "0"] <- NA
+  quant <- quant %>% dplyr::select(metList$metaboliteName)
+
+  #Area of LTR
+  # area <- do.call("cbind", (lapply(sampleType@obsDescr, function(x) x$Area))) %>% as.data.frame()
+  # colnames(area) <- sampleType@varName
+  # colnames(area) <- unname(sapply(colnames(area), function(x) gsub(" [IS]", "", x, fixed = TRUE)))
+  # area <- area %>% dplyr::select(metList$metaboliteName)
+  
+  #Join all LTR data frames
+  ltrQuant <- rbind(ltrQuant, quant)
+  # ltrArea <- rbind(ltrArea, area)
+  sampleCohort <- rbind(sampleCohort, sc)
+  
+  #Remove unused variables
+  # rm(daAA, sampleType, sampleID, cohort, sc, quant, area)
+  rm(daAA, sampleType, sampleID, cohort, sc, quant)
+}
+
+#Provide unique number for each sample ID
+sampleCohort$idx <- 1:nrow(sampleCohort)
+
+#Remove unused variables
+# rm(i)
+rm(dataFiles, fileName)
+```
+
+#NA% Plot Generation (LTR Quant)
+```{r}
+#Identify the number of NA values present for each metabolite
+plotData_NA <- apply(ltrQuant, 2, function(x){
+  c("TRUE"=length(which(is.na(x))), "FALSE"=length(which(!is.na(x))))
+})
+plotData_NA <- as.data.frame(plotData_NA, stringsAsFactors=FALSE)
+plotData_NA$missingValues = rownames(plotData_NA)
+
+#Convert the data matrix to long format
+plotData_NA <- reshape2::melt(plotData_NA, id.vars = "missingValues")
+
+#Plot graph
+ggplot(plotData_NA, aes(variable, value, fill=missingValues))+
+  geom_bar(stat="identity")+
+  coord_flip()+theme_bw()+
+  scale_fill_manual(values=c("light green", "red"))+
+  labs(y=NULL, x=NULL)+
+  scale_y_continuous(sec.axis = sec_axis(~./nrow(ltrQuant)*100, name='%'), name='n')
+```
+
+#Data Cleaning (LTR Quant)
+```{r}
+# Remove metabolites with NA values in its rows
+# ltrQuant <- ltrQuant[ , colSums(is.na(ltrQuant))  > 20]
+ltrQuant <- ltrQuant[ , (colMeans(is.na(ltrQuant)) * 100) < 50]
+
+ltrQuant <- apply(ltrQuant, 2, function(x){
+  as.numeric(x)
+  }) %>% as.data.frame()
+
+#Merge two data frames together
+bootLTRQ <- cbind(ltrQuant, sampleCohort)
+
+# #Set data in long format
+bootLTRQ <- melt(bootLTRQ, id.vars = colnames(sampleCohort))
+
+```
+
+#Bootstrap Confidence Interval (CI)
+```{r}
+
+bootSample <- list()
+
+for(i in 1:1000){
+  fi <- sample(nrow(ltrQuant), (0.80*nrow(ltrQuant)))
+  metStatsVar <- bootLTRQ %>% dplyr::group_by(variable) %>% 
+    dplyr::summarise(median = median(value[fi], na.rm = TRUE), sd = sd(value, na.rm = TRUE), 
+                     sd2 = sd(2*value, na.rm = TRUE), minv = min(value, na.rm = TRUE), maxv = max(value, na.rm = TRUE), se = sd/sqrt(nrow(ltrQuant)))
+  bootSample[[i]] <- metStatsVar$median
+}
+bootSample <- do.call("cbind", bootSample) %>% as.data.frame()
+lowerBound <- apply(bootSample, 1, function(x) quantile(x, 0.025))
+upperBound <- apply(bootSample, 1, function(x) quantile(x, 0.975))
+midPoint <- rowMeans(bootSample)
+
+
+metStatsVar <- cbind(metStatsVar, lowerBound, midPoint, upperBound) %>% as.data.frame()
+
+metStatsVar <- metStatsVar %>% mutate_if(is.numeric, round, digits = 3)
+htmlTable::htmlTable(metStatsVar)
+
+#Remove unused variables
+rm(i, fi, lowerBound, upperBound, midPoint)
+```
+
+#LTR Plot Generation
+```{r}
+plotData_LTRQ <- list()
+
+for(i in 1:ncol(ltrQuant)){
+  plot_data <- dplyr::as_tibble(cbind(ltrQuant[, i], sampleCohort$sampleID, sampleCohort$cohort, sampleCohort$idx)) %>%
+    mutate_at(c("V1", "V4"), as.numeric)
+    colnames(plot_data) <- c("value", "sampleID", "cohort", "idx")
+    plot_data$metabolite <- colnames(ltrQuant[i])
+    
+  plot_data <- plot_data %>%
+    summarise(metabolite = metabolite, sampleID = sampleID, idx = idx, cohort = cohort, value = value, 
+              lowerCI = metStatsVar$lowerBound[i], mean = metStatsVar$midPoint[i], 
+              upperCI = metStatsVar$upperBound[i], median = metStatsVar$median[i], 
+              sd = metStatsVar$sd[i], sd2 = metStatsVar$sd2[i], se = metStatsVar$se[i]) %>%
+    as.data.frame()
+  
+  pdLTRQ <- ggplot(plot_data, aes(idx, value, shape=ltr, color=factor(cohort)))+
+        geom_hline(aes(yintercept = lowerCI), linetype="dotted", colour="BLACK")+
+        geom_hline(aes(yintercept = upperCI), linetype="dotted", colour="BLACK")+
+        geom_hline(aes(yintercept = mean - sd), linetype="dotted", colour="RED")+
+        geom_hline(aes(yintercept = mean + sd), linetype="dotted", colour="RED")+
+        geom_hline(aes(yintercept = mean - sd2), linetype="dotted", colour="GREEN")+
+        geom_hline(aes(yintercept = mean + sd2), linetype="dotted", colour="GREEN")+
+        geom_point(shape=1)+
+        theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line = element_line(colour="BLACK"))+
+        facet_wrap(.~metabolite, nrow = 10, ncol = 6, scales = "free_y")+
+        scale_y_continuous(trans = "log10", name = "Concentration uM")+
+        labs(x = "Run Order")
+  
+  plotData_LTRQ[[i]] <- pdLTRQ
+}
+
+#Remove unused variables
+rm(i)
+
+```
+
+
+#Clean Up Environment
+```{r}
+rm(list = ls())
+```
+
