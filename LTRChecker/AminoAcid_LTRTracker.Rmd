@@ -59,6 +59,8 @@ fileList <- fileConfig %>% dplyr::filter(toReview==TRUE)
 fileList <- dplyr::select(fileList, 1)
 ```
 
+
+
 #Load All Data Elements
 ```{r}
 ltrQuant <- NULL
@@ -96,6 +98,9 @@ for(i in 1:nrow(fileList)){
   # colnames(area) <- sampleType@varName
   # colnames(area) <- unname(sapply(colnames(area), function(x) gsub(" [IS]", "", x, fixed = TRUE)))
   # area <- area %>% dplyr::select(metList$metaboliteName)
+  
+  #Check for same colnames before rbind
+  # cols<- intersect(colnames(ltrQuant), colnames(quant))
   
   #Join all LTR data frames
   ltrQuant <- rbind(ltrQuant, quant)
@@ -191,25 +196,26 @@ for(i in 1:ncol(ltrQuant)){
     colnames(plot_data) <- c("value", "sampleID", "cohort", "idx")
     plot_data$metabolite <- colnames(ltrQuant[i])
     
-  plot_data <- plot_data %>%
-    summarise(metabolite = metabolite, sampleID = sampleID, idx = idx, cohort = cohort, value = value, 
-              lowerCI = metStatsVar$lowerBound[i], mean = metStatsVar$midPoint[i], 
-              upperCI = metStatsVar$upperBound[i], median = metStatsVar$median[i], 
-              sd = metStatsVar$sd[i], sd2 = metStatsVar$sd2[i], se = metStatsVar$se[i]) %>%
-    as.data.frame()
+  # plot_data <- plot_data %>%
+  #   summarise(metabolite = metabolite, sampleID = sampleID, idx = idx, cohort = cohort, value = value, 
+  #             lowerCI = metStatsVar$lowerBound[i], mean = metStatsVar$midPoint[i], 
+  #             upperCI = metStatsVar$upperBound[i], median = metStatsVar$median[i], 
+  #             sd = metStatsVar$sd[i], sd2 = metStatsVar$sd2[i], se = metStatsVar$se[i]) %>%
+  #   as.data.frame()
   
-  pdLTRQ <- ggplot(plot_data, aes(idx, value, shape=ltr, color=factor(cohort)))+
-        geom_hline(aes(yintercept = lowerCI), linetype="dotted", colour="BLACK")+
-        geom_hline(aes(yintercept = upperCI), linetype="dotted", colour="BLACK")+
-        geom_hline(aes(yintercept = mean - sd), linetype="dotted", colour="RED")+
-        geom_hline(aes(yintercept = mean + sd), linetype="dotted", colour="RED")+
-        geom_hline(aes(yintercept = mean - sd2), linetype="dotted", colour="GREEN")+
-        geom_hline(aes(yintercept = mean + sd2), linetype="dotted", colour="GREEN")+
+  pdLTRQ <- ggplot(plot_data, aes(idx, value, color=factor(cohort)))+
+        # geom_hline(aes(yintercept = lowerCI), linetype="dotted", colour="BLACK")+
+        # geom_hline(aes(yintercept = upperCI), linetype="dotted", colour="BLACK")+
+        # geom_hline(aes(yintercept = mean - sd), linetype="dotted", colour="RED")+
+        # geom_hline(aes(yintercept = mean + sd), linetype="dotted", colour="RED")+
+        # geom_hline(aes(yintercept = mean - sd2), linetype="dotted", colour="GREEN")+
+        # geom_hline(aes(yintercept = mean + sd2), linetype="dotted", colour="GREEN")+
         geom_point(shape=1)+
         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
         panel.background = element_blank(), axis.line = element_line(colour="BLACK"))+
         facet_wrap(.~metabolite, nrow = 10, ncol = 6, scales = "free_y")+
         scale_y_continuous(trans = "log10", name = "Concentration uM")+
+        # ylim(c(min(plot_data$value - 0.2), max(plot_data$value + 0.2))) +
         labs(x = "Run Order")
   
   plotData_LTRQ[[i]] <- pdLTRQ
@@ -220,9 +226,17 @@ rm(i)
 
 ```
 
-
 #Clean Up Environment
 ```{r}
-rm(list = ls())
+# rm(list = ls())
 ```
 
+```{r}
+
+pdf("plotsAA.pdf")
+for (i in 1:25) {
+  print(plotData_LTRQ[[i]])
+}
+dev.off()
+
+```
