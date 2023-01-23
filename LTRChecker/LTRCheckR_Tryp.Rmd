@@ -1,0 +1,228 @@
+---
+title: "Check Tryp LTR values"
+author: "NathanGLawler"
+date: "`r Sys.Date()`"
+output: html_document:
+        code_folding: "hide"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Library Installation
+```{r}
+#Install non-standard required packages
+# devtools::install_github("jwist/fusion")
+# install.packages("tidyverse")
+# install.packages("gridExtra")
+# install.packages("cowplot")
+# devtools::install_github("tkimhofer/metabom8")
+```
+
+#Load Libraries
+```{r, message=FALSE}
+#Load required libraries
+library(fusion)
+library(tidyverse)
+library(reshape2)
+library(dplyr)
+library(readxl) 
+library(gridExtra)
+library(metabom8)
+library(ggforce)
+library(broom)
+```
+
+##Read in file configuration for Amino Acids from a centrally located google sheet. The sheet can be altered by a user to include or not include metabolites to review and past AA cohorts.
+
+```{r}
+
+##Set path for figures to be printed
+pathToFig <- file.path(Sys.getenv()['PROJECTS'], "LTRCheckR", "Tryp")
+
+metConfig <- read.csv2("https://docs.google.com/spreadsheets/d/e/2PACX-1vRPDk-U3YlaSvCct-lYcBmB5qQekXdY9q71726yxzkbrX-vFZLQ6V29y_aLroadUTmf4EPr8gz6OzSM/pub?gid=1001586708&single=true&output=csv", header = TRUE, sep = ",")
+
+fileConfig <- read.csv2("https://docs.google.com/spreadsheets/d/e/2PACX-1vRPDk-U3YlaSvCct-lYcBmB5qQekXdY9q71726yxzkbrX-vFZLQ6V29y_aLroadUTmf4EPr8gz6OzSM/pub?gid=1516762025&single=true&output=csv", header = TRUE, sep = ",")
+
+
+
+```
+
+
+#Load Config Files
+```{r}
+#Read config file
+# metConfig <- readxl::read_excel("./config/configFile.xlsx", sheet="metabolites")
+# fileConfig <- readxl::read_excel("./config/configFile.xlsx", sheet="dataFiles")
+
+#Extract list of targeted metabolites to be included (incl. Internal Standards)
+metISTDList <- metConfig %>% dplyr::filter(toInclude==TRUE)
+metISTDList <- dplyr::select(metISTDList, 1)
+
+#Extract list of targeted metabolites to be reviewed (excl. Internal Standards)
+metList <- metConfig %>% dplyr::filter(toReview==TRUE)
+metList <- dplyr::select(metList, 1)
+
+#Extract list of data files to review
+fileList <- fileConfig %>% dplyr::filter(toReview==TRUE)
+fileList <- dplyr::select(fileList, 1)
+```
+
+#Load All Data Elements
+```{r}
+ltrQuant <- NULL
+# ltrArea <- NULL
+sampleCohort <- NULL
+
+# dataDir <- "./data/"
+# dataFiles <- list.files(path=dataDir, full.names=FALSE)
+
+for(i in 1:nrow(fileList)){
+# for(fileName in dataFiles){
+  #Load data element file
+  load(fileList$fileName[i])
+  # load(paste(dataDir, fileName, sep=""))
+
+  #Extract all LTR data from project daE file
+  sampleType <- fusion::getData(daTr, type = c("ltr"), replicates = "all")
+
+  #LTR data file name & cohort
+  sampleID <- sampleType@obsDescr[[1]]$sampleID
+ 
+  # cohort <- sapply(strsplit(fileName, split="_"), getElement, 2)
+  cohort <- sapply(strsplit(fileList$fileName[i], split="_"), getElement, 2)
+  sc <- data.frame(sampleID, cohort)
+
+  #LTR Quantity
+  quant <- dplyr::as_tibble(sampleType@.Data) %>% as.data.frame()
+  colnames(quant) <- unname(sapply(colnames(quant), function(x) gsub(" [IS]", "", x, 
+                                                                     fixed = TRUE)))
+  quant[quant == "0"] <- NA
+  quant <- quant %>% dplyr::select(any_of(metList$metaboliteName))
+
+  #Area of LTR
+  # area <- do.call("cbind", (lapply(sampleType@obsDescr, function(x) x$Area))) %>% as.data.frame()
+  # colnames(area) <- sampleType@varName
+  # colnames(area) <- unname(sapply(colnames(area), function(x) gsub(" [IS]", "", x, fixed = TRUE)))
+  # area <- area %>% dplyr::select(metList$metaboliteName)
+  
+  #Join all LTR data frames
+  ltrQuant <- bind_rows(ltrQuant, quant)
+  # ltrArea <- rbind(ltrArea, area)
+  sampleCohort <- rbind(sampleCohort, sc)
+  
+  #Remove unused variables
+  # rm(daAA, sampleType, sampleID, cohort, sc, quant, area)
+  rm(daTr, sampleType, sampleID, cohort, sc, quant)
+}
+
+#Provide unique number for each sample ID
+sampleCohort$idx <- 1:nrow(sampleCohort)
+
+#Remove unused variables
+# rm(i)
+rm(dataFiles, fileName)
+```
+
+#NA% Plot Generation (LTR Quant)
+```{r}
+#Identify the number of NA values present for each metabolite
+plotData_NA <- apply(ltrQuant, 2, function(x){
+  c("TRUE"=length(which(is.na(x))), "FALSE"=length(which(!is.na(x))))
+})
+plotData_NA <- as.data.frame(plotData_NA, stringsAsFactors=FALSE)
+plotData_NA$missingValues = rownames(plotData_NA)
+
+#Convert the data matrix to long format
+plotData_NA <- reshape2::melt(plotData_NA, id.vars = "missingValues")
+
+#Plot graph
+ggplot(plotData_NA, aes(variable, value, fill=missingValues))+
+  geom_bar(stat="identity")+
+  coord_flip()+theme_bw()+
+  scale_fill_manual(values=c("light green", "red"))+
+  labs(y=NULL, x=NULL)+
+  scale_y_continuous(sec.axis = sec_axis(~./nrow(ltrQuant)*100, name='%'), name='n')
+```
+
+#Data Cleaning (LTR Quant)
+```{r}
+# Remove metabolites with NA values in its rows
+# ltrQuant <- ltrQuant[ , colSums(is.na(ltrQuant))  > 20]
+ltrQuant <- ltrQuant[ , (colMeans(is.na(ltrQuant)) * 100) < 50]
+
+ltrQuant <- apply(ltrQuant, 2, function(x){
+  as.numeric(x)
+  }) %>% as.data.frame()
+
+#Merge two data frames together
+bootLTRQ <- cbind(ltrQuant, sampleCohort)
+
+# #Set data in long format
+bootLTRQ <- melt(bootLTRQ, id.vars = colnames(sampleCohort))
+
+```
+
+#Bootstrap Confidence Interval (CI)
+```{r}
+
+bootSample <- list()
+
+for(i in 1:1000){
+  fi <- sample(nrow(ltrQuant), (0.80*nrow(ltrQuant)))
+  metStatsVar <- bootLTRQ %>% dplyr::group_by(variable) %>% 
+    dplyr::summarise(median = median(value[fi], na.rm = TRUE), sd = sd(value, na.rm = TRUE), 
+                     sd2 = sd(2*value, na.rm = TRUE), minv = min(value, na.rm = TRUE), maxv = max(value, na.rm = TRUE), se = sd/sqrt(nrow(ltrQuant)))
+  bootSample[[i]] <- metStatsVar$median
+}
+bootSample <- do.call("cbind", bootSample) %>% as.data.frame()
+lowerBound <- apply(bootSample, 1, function(x) quantile(x, 0.025))
+upperBound <- apply(bootSample, 1, function(x) quantile(x, 0.975))
+midPoint <- rowMeans(bootSample)
+
+
+metStatsVar <- cbind(metStatsVar, lowerBound, midPoint, upperBound) %>% as.data.frame()
+
+metStatsVar <- metStatsVar %>% mutate_if(is.numeric, round, digits = 3)
+htmlTable::htmlTable(metStatsVar)
+
+#Remove unused variables
+rm(i, fi, lowerBound, upperBound, midPoint)
+```
+
+#LTR Plot Generation
+```{r}
+pathToFig <- 
+
+allLTR <- cbind(sampleCohort, ltrQuant) %>% select(-idx)
+
+##Flip data to long format
+LTRLong <- allLTR %>% 
+  pivot_longer(cols = "5-hydroxyindole acetic acid":"SIL Tryptophan-d5_neg",
+                 names_to = "key", 
+                 values_to = "value") %>% 
+  rowid_to_column(var = "idx")
+ 
+LTRLong$key <- as.factor(LTRLong$key)
+
+ltrSER <- LTRLong %>% 
+  ggplot(aes(x = idx, y = value, colour = cohort)) +
+  geom_point() +
+  facet_wrap_paginate(~ key, ncol = 4, nrow = 5, page = 1, scales = "free_y") 
+  n <- n_pages(ltrSER)
+
+pdf(file = file.path(pathToFig,'Serum.pdf'), paper= 'A4', w= 210/25.4, 297/25.4)
+for(i in 1:n){
+    print(ltrSER + facet_wrap_paginate(~ key, ncol = 3, nrow = 5, page = i, scales = "free_y"))
+}
+dev.off()
+
+```
+
+
+#Clean Up Environment
+```{r}
+# rm(list = ls())
+```
+
