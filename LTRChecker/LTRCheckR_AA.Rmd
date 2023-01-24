@@ -18,23 +18,30 @@ output: html_document
 #Load Libraries
 ```{r, message=FALSE}
 #Load required libraries
-library(fusion)
-library(tidyverse)
-library(reshape2)
-library(dplyr)
-library(readxl) 
-library(gridExtra)
-library(metabom8)
-library(readxl)
-library(ggrepel)
+
+#### load packages
+package_list <- c('tidyverse', 'janitor', 'qualV', 'kableExtra', 'fusion',
+                  'readxl', 'ggforce','broom')
+for(idx_package in package_list){
+  if(length(which(row.names(installed.packages()) == idx_package)) > 0){
+    suppressMessages(require(package = idx_package,
+                             character.only = TRUE))
+  } else {
+    paste0(idx_package, " is not installed. Please install ", idx_package, " before continuing.") %>% print()
+  }
+}
+
 ```
 
 ##Read in file configuration for Amino Acids from a centrally located google sheet. The sheet can be altered by a user to include or not include metabolites to review and past AA cohorts.
 
 ```{r}
-metConfig <- read.csv2("https://docs.google.com/spreadsheets/d/e/2PACX-1vSugXXHxtwZIijb9r41-vUln-aLvhiRsncr2DwSvSjF3tr99pLTQCJlge3UB2RwuCeVJikUmE6G3HCZ/pub?output=csv", header = TRUE, sep = ",")
 
-fileConfig <- read.csv2("https://docs.google.com/spreadsheets/d/e/2PACX-1vSugXXHxtwZIijb9r41-vUln-aLvhiRsncr2DwSvSjF3tr99pLTQCJlge3UB2RwuCeVJikUmE6G3HCZ/pub?gid=631312894&single=true&output=csv", header = TRUE, sep = ",")
+pathToFig <- file.path(Sys.getenv()['PROJECTS'], "LTRCheckR", "AA")
+
+metConfig <- read.csv2("https://docs.google.com/spreadsheets/d/e/2PACX-1vRPDk-U3YlaSvCct-lYcBmB5qQekXdY9q71726yxzkbrX-vFZLQ6V29y_aLroadUTmf4EPr8gz6OzSM/pub?gid=190423913&single=true&output=csv", header = TRUE, sep = ",")
+
+fileConfig <- read.csv2("https://docs.google.com/spreadsheets/d/e/2PACX-1vRPDk-U3YlaSvCct-lYcBmB5qQekXdY9q71726yxzkbrX-vFZLQ6V29y_aLroadUTmf4EPr8gz6OzSM/pub?gid=631312894&single=true&output=csv", header = TRUE, sep = ",")
 
 
 
@@ -104,7 +111,7 @@ for(i in 1:nrow(fileList)){
   # cols<- intersect(colnames(ltrQuant), colnames(quant))
   
   #Join all LTR data frames
-  ltrQuant <- rbind(ltrQuant, quant)
+  ltrQuant <- bind_rows(ltrQuant, quant)
   # ltrArea <- rbind(ltrArea, area)
   sampleCohort <- rbind(sampleCohort, sc)
   
@@ -189,51 +196,69 @@ bootLTRQ <- melt(bootLTRQ, id.vars = colnames(sampleCohort))
 
 #LTR Plot Generation
 ```{r}
-plotData_LTRQ <- list()
 
-for(i in 1:ncol(ltrQuant)){
-  plot_data <- dplyr::as_tibble(cbind(ltrQuant[, i], sampleCohort$sampleID, sampleCohort$cohort, sampleCohort$idx)) %>%
-    mutate_at(c("V1", "V4"), as.numeric)
-    colnames(plot_data) <- c("value", "sampleID", "cohort", "idx")
-    plot_data$metabolite <- colnames(ltrQuant[i])
-    
-  # plot_data <- plot_data %>%
-  #   summarise(metabolite = metabolite, sampleID = sampleID, idx = idx, cohort = cohort, value = value, 
-  #             lowerCI = metStatsVar$lowerBound[i], mean = metStatsVar$midPoint[i], 
-  #             upperCI = metStatsVar$upperBound[i], median = metStatsVar$median[i], 
-  #             sd = metStatsVar$sd[i], sd2 = metStatsVar$sd2[i], se = metStatsVar$se[i]) %>%
-  #   as.data.frame()
-  
-  pdLTRQ <- ggplot(plot_data, aes(idx, value, color=factor(cohort)))+
-        # geom_hline(aes(yintercept = lowerCI), linetype="dotted", colour="BLACK")+
-        # geom_hline(aes(yintercept = upperCI), linetype="dotted", colour="BLACK")+
-        # geom_hline(aes(yintercept = mean - sd), linetype="dotted", colour="RED")+
-        # geom_hline(aes(yintercept = mean + sd), linetype="dotted", colour="RED")+
-        # geom_hline(aes(yintercept = mean - sd2), linetype="dotted", colour="GREEN")+
-        # geom_hline(aes(yintercept = mean + sd2), linetype="dotted", colour="GREEN")+
-        geom_point(shape=1)+
-        theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
-        panel.background = element_blank(), axis.line = element_line(colour="BLACK"))+
-        facet_wrap(.~metabolite, nrow = 10, ncol = 6, scales = "free_y")+
-        scale_y_continuous(trans = "log10", name = "Concentration uM")+
-        # ylim(c(min(plot_data$value - 0.2), max(plot_data$value + 0.2))) +
-        labs(x = "Run Order")
-  
-  plotData_LTRQ[[i]] <- pdLTRQ
-}
 
-#Remove unused variables
-rm(i)
+allLTR <- cbind(sampleCohort, ltrQuant) %>% select(-idx)
 
-```
-#Create a PDF of the plots
-```{r}
+##Flip data to long format
+LTRLong <- allLTR %>% 
+  pivot_longer(cols = "5-hydroxyindole acetic acid":"SIL Tryptophan-d5_neg",
+                 names_to = "key", 
+                 values_to = "value") %>% 
+  rowid_to_column(var = "idx")
+ 
+LTRLong$key <- as.factor(LTRLong$key)
 
-pdf("plotsLTRAA.pdf")
-for (i in 1:length(plotData_LTRQ)) {
-  print(plotData_LTRQ[[i]])
+ltrSER <- LTRLong %>% 
+  ggplot(aes(x = idx, y = value, colour = cohort)) +
+  geom_point() +
+  facet_wrap_paginate(~ key, ncol = 4, nrow = 5, page = 1, scales = "free_y") 
+  n <- n_pages(ltrSER)
+
+pdf(file = file.path(pathToFig,'Serum.pdf'), paper= 'A4', w= 210/25.4, 297/25.4)
+for(i in 1:n){
+    print(ltrSER + facet_wrap_paginate(~ key, ncol = 3, nrow = 5, page = i, scales = "free_y"))
 }
 dev.off()
+
+
+
+
+# plotData_LTRQ <- list()
+# 
+# for(i in 1:ncol(ltrQuant)){
+#   plot_data <- dplyr::as_tibble(cbind(ltrQuant[, i], sampleCohort$sampleID, sampleCohort$cohort, sampleCohort$idx)) %>%
+#     mutate_at(c("V1", "V4"), as.numeric)
+#     colnames(plot_data) <- c("value", "sampleID", "cohort", "idx")
+#     plot_data$metabolite <- colnames(ltrQuant[i])
+#     
+#   # plot_data <- plot_data %>%
+#   #   summarise(metabolite = metabolite, sampleID = sampleID, idx = idx, cohort = cohort, value = value, 
+#   #             lowerCI = metStatsVar$lowerBound[i], mean = metStatsVar$midPoint[i], 
+#   #             upperCI = metStatsVar$upperBound[i], median = metStatsVar$median[i], 
+#   #             sd = metStatsVar$sd[i], sd2 = metStatsVar$sd2[i], se = metStatsVar$se[i]) %>%
+#   #   as.data.frame()
+#   
+#   pdLTRQ <- ggplot(plot_data, aes(idx, value, color=factor(cohort)))+
+#         # geom_hline(aes(yintercept = lowerCI), linetype="dotted", colour="BLACK")+
+#         # geom_hline(aes(yintercept = upperCI), linetype="dotted", colour="BLACK")+
+#         # geom_hline(aes(yintercept = mean - sd), linetype="dotted", colour="RED")+
+#         # geom_hline(aes(yintercept = mean + sd), linetype="dotted", colour="RED")+
+#         # geom_hline(aes(yintercept = mean - sd2), linetype="dotted", colour="GREEN")+
+#         # geom_hline(aes(yintercept = mean + sd2), linetype="dotted", colour="GREEN")+
+#         geom_point(shape=1)+
+#         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+#         panel.background = element_blank(), axis.line = element_line(colour="BLACK"))+
+#         facet_wrap(.~metabolite, nrow = 10, ncol = 6, scales = "free_y")+
+#         scale_y_continuous(trans = "log10", name = "Concentration uM")+
+#         # ylim(c(min(plot_data$value - 0.2), max(plot_data$value + 0.2))) +
+#         labs(x = "Run Order")
+#   
+#   plotData_LTRQ[[i]] <- pdLTRQ
+# }
+# 
+# #Remove unused variables
+# rm(i)
 
 ```
 

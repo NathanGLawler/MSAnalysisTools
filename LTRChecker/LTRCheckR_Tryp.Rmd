@@ -10,29 +10,24 @@ output: html_document:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-#Library Installation
-```{r}
-#Install non-standard required packages
-# devtools::install_github("jwist/fusion")
-# install.packages("tidyverse")
-# install.packages("gridExtra")
-# install.packages("cowplot")
-# devtools::install_github("tkimhofer/metabom8")
-```
-
 #Load Libraries
 ```{r, message=FALSE}
 #Load required libraries
-library(fusion)
-library(tidyverse)
-library(reshape2)
-library(dplyr)
-library(readxl) 
-library(gridExtra)
-library(metabom8)
-library(ggforce)
-library(broom)
+
+#### load packages
+package_list <- c('tidyverse', 'janitor', 'qualV', 'kableExtra', 'fusion',
+                  'readxl', 'ggforce','broom')
+for(idx_package in package_list){
+  if(length(which(row.names(installed.packages()) == idx_package)) > 0){
+    suppressMessages(require(package = idx_package,
+                             character.only = TRUE))
+  } else {
+    paste0(idx_package, " is not installed. Please install ", idx_package, " before continuing.") %>% print()
+  }
+}
+
 ```
+
 
 ##Read in file configuration for Amino Acids from a centrally located google sheet. The sheet can be altered by a user to include or not include metabolites to review and past AA cohorts.
 
@@ -193,8 +188,6 @@ rm(i, fi, lowerBound, upperBound, midPoint)
 
 #LTR Plot Generation
 ```{r}
-pathToFig <- 
-
 allLTR <- cbind(sampleCohort, ltrQuant) %>% select(-idx)
 
 ##Flip data to long format
